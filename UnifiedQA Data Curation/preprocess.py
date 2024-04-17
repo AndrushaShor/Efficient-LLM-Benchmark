@@ -35,7 +35,7 @@ def make_unified_qa_dataset(unified_datasets: list, data_path: str, data_type: s
             answers += unified_dataset[dataset]['answer']
         
         os.makedirs(file_path, exist_ok=True)
-        fp = file_path + "\\" + data_type + ".json"
+        fp = f'{file_path}/{data_type}.json'
         with open(fp, "w") as f:
             json.dump([id, questions, answers], f)
     return unified_dataset
