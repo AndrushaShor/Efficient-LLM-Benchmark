@@ -121,7 +121,7 @@ def tokenize_dataset(preprocessed_unified_dataset: dict, model_name: str, pad_to
         
         
         os.makedirs(file_path, exist_ok=True)
-        fp = file_path + "\\" + file_name + '.json'
+        fp = f'{file_path}/{file_name}.json'
         with open(fp, "w") as f:
             json.dump([id, questions, answers, text, input_id], f)
 
