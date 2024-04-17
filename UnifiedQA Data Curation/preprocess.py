@@ -98,7 +98,7 @@ def preprocess_unified_qa_dataset(datasets: dict, append_instruction_gemma: bool
     return preprocessed_unified_dataset
 
 
-def load_dataset(preprocessed_unified_dataset: dict, model_name: str, pad_token: bool, pad_side:str='right', enable_load:bool=True, 
+def tokenize_dataset(preprocessed_unified_dataset: dict, model_name: str, pad_token: bool, pad_side:str='right', enable_load:bool=True, 
                  file_path:str=None, file_name:str=None) -> dict:
     assert not enable_load or file_path is not None or file_name is not None, "file_path cannot be None if enable_load is True"
 
