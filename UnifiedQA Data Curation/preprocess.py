@@ -90,7 +90,7 @@ def preprocess_unified_qa_dataset(datasets: dict, append_instruction_gemma: bool
 
 
         os.makedirs(file_path, exist_ok=True)
-        fp = file_path + "\\" + file_name + '.json'
+        fp = f'{file_path}/{file_name}.json'
         print(fp)
         with open(fp, "w") as f:
             json.dump([id, questions, answers], f)
