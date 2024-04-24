@@ -1,4 +1,5 @@
 import os
+import gc
 import re
 import json
 import torch
@@ -15,6 +16,10 @@ from peft import LoraConfig, PeftModel, prepare_model_for_kbit_training, IA3Conf
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, HfArgumentParser, TrainingArguments, pipeline
 from trl import SFTTrainer
 
+'''
+Please referenced this github for more info on how PeFT was implemented by the wonderful folks at Huggingface:
+https://github.com/huggingface/peft
+'''
 
 def load_tokenized_dataset(file_path:str) -> Dataset:
     data_dict = {}
@@ -95,6 +100,14 @@ def prepare_peft_model(base_model:AutoModelForCausalLM, tokenizer:AutoTokenizer,
     return peft_model
 
 
+def del_model_of_gpu(model_on_cuda):
+    '''
+    Deletes model from GPU and clears all the Cache! 
+    '''
+    del model_on_cuda
+    gc.collect()
+    torch.cuda.empty_cache()
+
 
 def setup_trainer(model, ds, tokenizer, peft_config, custom_args=None):
 
@@ -124,7 +137,7 @@ def setup_trainer(model, ds, tokenizer, peft_config, custom_args=None):
     trainer = SFTTrainer(
         model=model,
         train_dataset=ds['train'],
-        eval_dataset=ds['test'],
+        eval_dataset=ds['dev'],
         peft_config=peft_config,
         dataset_text_field="text",
         max_seq_length=512,
