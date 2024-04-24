@@ -11,7 +11,7 @@ from datasets import Dataset
 import accelerate
 import bitsandbytes
 
-from peft import LoraConfig, LoraModel, PeftModel, prepare_model_for_kbit_training
+from peft import LoraConfig, PeftModel, prepare_model_for_kbit_training, IA3Config, AdaLoraConfig, PromptEmbedding, PromptTuningConfig
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, HfArgumentParser, TrainingArguments, pipeline
 from trl import SFTTrainer
 
@@ -33,6 +33,7 @@ def load_tokenized_dataset(file_path:str) -> Dataset:
 
 def load_model(base_model: str, bnb_config:BitsAndBytesConfig=None, on_gpu:bool=False, use_cache:bool=False, pretraining_tp:int=1) -> AutoModelForCausalLM:
     if on_gpu:
+        print("in here")
         base_model = AutoModelForCausalLM.from_pretrained(base_model, quantization_config=bnb_config, device_map={"": 0})
     else:
         base_model = AutoModelForCausalLM.from_pretrained(base_model, quantization_config=bnb_config)
@@ -49,7 +50,7 @@ def load_model(base_model: str, bnb_config:BitsAndBytesConfig=None, on_gpu:bool=
 # for lora and qlora: https://www.databricks.com/blog/efficient-fine-tuning-lora-guide-llms 
 def prepare_lora_config(r:int=8, lora_alpha:int = 8, lora_dropout:float=.05, bias=None, targets:str='linear', task_type:str='CAUSAL_LM'): # can also take attn
     assert targets in ['linear', 'attn'], "Targets must be 'linear' or 'attn'."
-    if targets == 'linear':
+    if targets == 'linear':  # per literature review, best performance is when LoRA and QLoRA are applied to lora linear layers
         target_modules = ['q_proj','k_proj','v_proj','o_proj','gate_proj','down_proj','up_proj','lm_head']
     elif targets == 'attn':
         target_modules = ["q_proj", "v_proj"]
@@ -57,10 +58,42 @@ def prepare_lora_config(r:int=8, lora_alpha:int = 8, lora_dropout:float=.05, bia
     return LoraConfig(r=r, target_modules=target_modules, lora_alpha=lora_alpha, lora_dropout=lora_dropout, bias=bias, task_type=task_type)
 
 
-def prepare_peft_model(base_model:AutoModelForCausalLM, tokenizer:AutoTokenizer, use_cache=False) -> PeftModel: # For LoRA and QLoRA. To run with QLoRA load model in 4bit quantization
+# for IA3: https://huggingface.co/docs/peft/en/package_reference/ia3
+def prepare_ia3_config(r:int=8, targets:str='linear', feedforward_modules=None, task_type:str='CAUSAL_LM'): # can also take attn
+    assert targets in ['linear', 'attn'], "Targets must be 'linear' or 'attn'."
+    if targets == 'linear':
+        target_modules = ['q_proj','k_proj','v_proj','o_proj','gate_proj','down_proj','up_proj','lm_head']
+    elif targets == 'attn':
+        target_modules = ["q_proj", "v_proj"]
+    
+    return IA3Config(peft_type="IA3", task_type=task_type, target_modules=target_modules, feedforward_modules=feedforward_modules)
+
+
+# for AdaLora: https://huggingface.co/docs/peft/en/package_reference/adalora
+def prepare_adalora_config(r:int=8, lora_alpha:int = 8, lora_dropout:float=.05, bias=None, targets:str='linear', task_type:str='CAUSAL_LM'): # can also take attn
+    assert targets in ['linear', 'attn'], "Targets must be 'linear' or 'attn'."
+    if targets == 'linear':  # per literature review, best performance is when LoRA and QLoRA are applied to lora linear layers
+        target_modules = ['q_proj','k_proj','v_proj','o_proj','gate_proj','down_proj','up_proj','lm_head']
+    elif targets == 'attn':
+        target_modules = ["q_proj", "v_proj"]
+    
+    return AdaLoraConfig(peft_type="ADALORA", task_type=task_type, r=r, target_modules=target_modules, lora_alpha=lora_alpha, lora_dropout=lora_dropout, bias=bias)
+
+
+# https://huggingface.co/docs/peft/en/package_reference/prompt_tuning
+# https://huggingface.co/docs/peft/main/en/task_guides/clm-prompt-tuning
+def prepare_prompt_tuning_config(task_type:str='CAUSAL_LM', num_virtual_tokens:int = 8, prompt_tuning_init_task:str = None, tokenizer_model:AutoTokenizer=None):
+
+    return PromptTuningConfig(task_type=task_type, prompt_tuning_init="TEXT", num_virtual_toekns=num_virtual_tokens, prompt_tuning_init_text=prompt_tuning_init_task, tokenizer_name_or_path=tokenizer_model)
+
+
+def prepare_peft_model(base_model:AutoModelForCausalLM, tokenizer:AutoTokenizer, use_cache:bool=False) -> PeftModel: # For LoRA and QLoRA. To run with QLoRA load model in 4bit quantization
     peft_model = prepare_model_for_kbit_training(base_model)
     peft_model.config.pad_token_id = tokenizer.pad_token_id
     peft_model.use_cache = use_cache
+    
+    return peft_model
+
 
 
 def setup_trainer(model, ds, tokenizer, peft_config, custom_args=None):
