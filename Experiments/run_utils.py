@@ -169,5 +169,3 @@ def throughput(model, assistant_model, tokenizer, inputs, max_new_tokens=200, te
     text = tokenizer.decode(response[0])
     print(text)
 
-
-def 
