@@ -4,6 +4,7 @@ import re
 import json
 import torch
 import logging 
+import time
 import pandas as pd
 
 
@@ -146,3 +147,27 @@ def setup_trainer(model, ds, tokenizer, peft_config, custom_args=None):
     )
 
     return trainer
+
+
+def speculative_decoding(model, assistant_model, inputs, tokenizer):
+    outputs = model.generate(**inputs, assistant_model=assistant_model)
+    return tokenizer.batch_decode(outputs, skip_special_tokens=True)
+
+
+def throughput(model, assistant_model, tokenizer, inputs, max_new_tokens=200, temperature=.5):
+    start = time.time()
+    response = model.generate(**inputs, assistant_model=assistant_model, max_new_tokens=max_new_tokens, temperature=temperature)
+    end = time.time()
+
+    latency = end - start
+    print(f"Latency: {latency} seconds")
+
+    output_tokens = len(response[0])
+    through_put = output_tokens / latency
+    print(f"Throughput: {through_put} tokens/second")
+
+    text = tokenizer.decode(response[0])
+    print(text)
+
+
+def 
