@@ -26,41 +26,42 @@ def load_tokenized_dataset(file_path:str) -> Dataset:
     data_dict = {}
     with open(file_path, 'r') as fp:
         id, questions, answers, text, input_id = json.load(fp)
-        
+
         data_dict['id'] = id
         data_dict['questions'] = questions
         data_dict['answers'] = answers
         data_dict['text'] = text
         data_dict['input_ids'] = input_id
-        
-    
+
+
     return Dataset.from_dict(data_dict)
 
 
 def load_model(base_model: str, bnb_config:BitsAndBytesConfig=None, on_gpu:bool=False, use_cache:bool=False, pretraining_tp:int=1) -> AutoModelForCausalLM:
     if on_gpu:
         print("in here")
-        base_model = AutoModelForCausalLM.from_pretrained(base_model, quantization_config=bnb_config, device_map={"": 0})
+        base_model_loaded = AutoModelForCausalLM.from_pretrained(base_model, quantization_config=bnb_config, device_map={"": 0})
+        print(base_model)
     else:
-        base_model = AutoModelForCausalLM.from_pretrained(base_model, quantization_config=bnb_config)
-    
-    base_model.config.use_cache = use_cache
-    base_model.config.pretraining_tp = pretraining_tp
+        base_model_loaded = AutoModelForCausalLM.from_pretrained(base_model)
+
+    base_model_loaded.config.use_cache = use_cache
+    base_model_loaded.config.pretraining_tp = pretraining_tp
 
     tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
 
-    return base_model, tokenizer
+    return base_model_loaded, tokenizer
 
-# for lora and qlora: https://www.databricks.com/blog/efficient-fine-tuning-lora-guide-llms 
-def prepare_lora_config(r:int=8, lora_alpha:int = 8, lora_dropout:float=.05, bias=None, targets:str='linear', task_type:str='CAUSAL_LM'): # can also take attn
+# for lora and qlora: https://www.databricks.com/blog/efficient-fine-tuning-lora-guide-llms
+def prepare_lora_config(r:int=8, lora_alpha:int = 8, lora_dropout:float=.05, bias='none', targets:str='linear', task_type:str='CAUSAL_LM'): # can also take attn
     assert targets in ['linear', 'attn'], "Targets must be 'linear' or 'attn'."
     if targets == 'linear':  # per literature review, best performance is when LoRA and QLoRA are applied to lora linear layers
         target_modules = ['q_proj','k_proj','v_proj','o_proj','gate_proj','down_proj','up_proj','lm_head']
     elif targets == 'attn':
         target_modules = ["q_proj", "v_proj"]
-    
+
     return LoraConfig(r=r, target_modules=target_modules, lora_alpha=lora_alpha, lora_dropout=lora_dropout, bias=bias, task_type=task_type)
 
 
@@ -71,18 +72,18 @@ def prepare_ia3_config(r:int=8, targets:str='linear', feedforward_modules=None, 
         target_modules = ['q_proj','k_proj','v_proj','o_proj','gate_proj','down_proj','up_proj','lm_head']
     elif targets == 'attn':
         target_modules = ["q_proj", "v_proj"]
-    
+
     return IA3Config(peft_type="IA3", task_type=task_type, target_modules=target_modules, feedforward_modules=feedforward_modules)
 
 
 # for AdaLora: https://huggingface.co/docs/peft/en/package_reference/adalora
-def prepare_adalora_config(r:int=8, lora_alpha:int = 8, lora_dropout:float=.05, bias=None, targets:str='linear', task_type:str='CAUSAL_LM'): # can also take attn
+def prepare_adalora_config(r:int=8, lora_alpha:int = 8, lora_dropout:float=.05, bias='none', targets:str='linear', task_type:str='CAUSAL_LM'): # can also take attn
     assert targets in ['linear', 'attn'], "Targets must be 'linear' or 'attn'."
     if targets == 'linear':  # per literature review, best performance is when LoRA and QLoRA are applied to lora linear layers
         target_modules = ['q_proj','k_proj','v_proj','o_proj','gate_proj','down_proj','up_proj','lm_head']
     elif targets == 'attn':
         target_modules = ["q_proj", "v_proj"]
-    
+
     return AdaLoraConfig(peft_type="ADALORA", task_type=task_type, r=r, target_modules=target_modules, lora_alpha=lora_alpha, lora_dropout=lora_dropout, bias=bias)
 
 
@@ -90,20 +91,20 @@ def prepare_adalora_config(r:int=8, lora_alpha:int = 8, lora_dropout:float=.05, 
 # https://huggingface.co/docs/peft/main/en/task_guides/clm-prompt-tuning
 def prepare_prompt_tuning_config(task_type:str='CAUSAL_LM', num_virtual_tokens:int = 8, prompt_tuning_init_task:str = None, tokenizer_model:AutoTokenizer=None):
 
-    return PromptTuningConfig(task_type=task_type, prompt_tuning_init="TEXT", num_virtual_toekns=num_virtual_tokens, prompt_tuning_init_text=prompt_tuning_init_task, tokenizer_name_or_path=tokenizer_model)
+    return PromptTuningConfig(task_type=task_type, prompt_tuning_init="TEXT", num_virtual_tokens=num_virtual_tokens, prompt_tuning_init_text=prompt_tuning_init_task, tokenizer_name_or_path=tokenizer_model)
 
 
 def prepare_peft_model(base_model:AutoModelForCausalLM, tokenizer:AutoTokenizer, use_cache:bool=False) -> PeftModel: # For LoRA and QLoRA. To run with QLoRA load model in 4bit quantization
     peft_model = prepare_model_for_kbit_training(base_model)
     peft_model.config.pad_token_id = tokenizer.pad_token_id
     peft_model.use_cache = use_cache
-    
+
     return peft_model
 
 
 def del_model_of_gpu(model_on_cuda):
     '''
-    Deletes model from GPU and clears all the Cache! 
+    Deletes model from GPU and clears all the Cache!
     '''
     del model_on_cuda
     gc.collect()
@@ -168,4 +169,3 @@ def throughput(model, assistant_model, tokenizer, inputs, max_new_tokens=200, te
 
     text = tokenizer.decode(response[0])
     print(text)
-
