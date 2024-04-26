@@ -36,6 +36,23 @@ def load_tokenized_dataset(file_path:str) -> Dataset:
 
     return Dataset.from_dict(data_dict)
 
+def load_datasets_from_directory(directory_path: str) -> tuple:
+    
+    expected_files = {"train.json", "dev.json", "test.json"}
+    
+    
+    actual_files = set(os.listdir(directory_path))
+    
+    
+    if expected_files != actual_files:
+        raise ValueError(f"Directory must contain exactly these files: {expected_files}")
+    
+    
+    train_dataset = load_tokenized_dataset(os.path.join(directory_path, "train.json"))
+    dev_dataset = load_tokenized_dataset(os.path.join(directory_path, "dev.json"))
+    test_dataset = load_tokenized_dataset(os.path.join(directory_path, "test.json"))
+
+    return (train_dataset, dev_dataset, test_dataset)
 
 def load_model(base_model: str, bnb_config:BitsAndBytesConfig=None, on_gpu:bool=False, use_cache:bool=False, pretraining_tp:int=1) -> AutoModelForCausalLM:
     if on_gpu:
