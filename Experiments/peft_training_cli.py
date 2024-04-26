@@ -61,8 +61,8 @@ def setup(hf_token:str, base_model:str, quantization_type:str, dir_path:str, exp
 
 
     else: # run quantization experiments
-        for quant in quant_types: # qlora
-            loaded_base_model, loaded_tokenizer = load_model(base_model=hf_model, bnb_config=bnb_config, access_token=hf_token, on_gpu=on_gpu, use_cache=use_cache)
+        for quant_config in quant_types: # qlora
+            loaded_base_model, loaded_tokenizer = load_model(base_model=hf_model, bnb_config=quant_config, access_token=hf_token, on_gpu=on_gpu, use_cache=use_cache)
             ds = {'train': train, 'dev': dev, 'test': test}
             train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig, ds=ds)
             train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig_attn, ds=ds)
