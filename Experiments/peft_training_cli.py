@@ -49,8 +49,8 @@ def setup(hf_token:str, base_model:str, quantization_type:str, dir_path:str, exp
     elif experiment_type == 'adalora':
         peftConfig = prepare_adalora_config(r=8, lora_alpha=16, lora_dropout=0.1, bias='none', targets='linear') 
         peftConfig_attn = prepare_adalora_config(r=8, lora_alpha=16, lora_dropout=0.1, bias='none', targets='attn')
-    elif experiment_type == 'prompt_tuning': # TODO: Micaela - please add hyperparameters we want to use here
-        peftConfig = prepare_prompt_tuning_config()
+    elif experiment_type == 'prompt_tuning':
+        peftConfig = prepare_prompt_tuning_config(prompt_tuning_init_task="Let's think step by step.", num_virtual_tokens=10)
         peftConfig_attn = None
 
     if not determine_optimal: # train_peft

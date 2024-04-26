@@ -106,8 +106,7 @@ def prepare_adalora_config(r:int=8, lora_alpha:int = 8, lora_dropout:float=.05, 
 
 # https://huggingface.co/docs/peft/en/package_reference/prompt_tuning
 # https://huggingface.co/docs/peft/main/en/task_guides/clm-prompt-tuning
-def prepare_prompt_tuning_config(task_type:str='CAUSAL_LM', num_virtual_tokens:int = 8, prompt_tuning_init_task:str = None, tokenizer_model:AutoTokenizer=None):
-
+def prepare_prompt_tuning_config(task_type:str='CAUSAL_LM', num_virtual_tokens:int = 8, prompt_tuning_init_task:str = None, tokenizer_model:str=None):
     return PromptTuningConfig(task_type=task_type, prompt_tuning_init="TEXT", num_virtual_tokens=num_virtual_tokens, prompt_tuning_init_text=prompt_tuning_init_task, tokenizer_name_or_path=tokenizer_model)
 
 
