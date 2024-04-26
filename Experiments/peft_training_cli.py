@@ -67,6 +67,7 @@ def setup(hf_token:str, base_model:str, quantization_type:str, dir_path:str, exp
             train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig, ds=ds)
             train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig_attn, ds=ds)
 
+
 def train_peft(loaded_base_model, loaded_tokenizer, peftConfig, ds): # TODO: Load trainer config 
     assert peftConfig != None, 'Cannot train with PEFT Methods without PEFT Config!'
     
@@ -87,7 +88,7 @@ if __name__ == '__main__':
     parser.add_argument('--experiment_type', type=str, required=True, default='qlora', choices=['lora', 'qlora', 'ia3', 'adalora', 'prompt_tuning'], help='The type of Parameter Efficient Finetuning (PEFT) Method to use for experimentation. Default will run experiments on all types.')
     parser.add_argument('--on_gpu', action='store_true', help='Flag to run the model on GPU.')
     parser.add_argument('--use_cache', action='store_false', help='Flag to enable caching in the model. Cache is not enabled by default.')
-    parser.add_argument('--results_path', type=str, required=True, help='Location to store the trained model and the checkpoints')
+    parser.add_argument('--results_path', type=str, required=True, help='Location to store the trained model and the checkpoints') # TODO: Andrey to implement this for evaluation step
 
     
     args = parser.parse_args()
