@@ -41,14 +41,14 @@ def setup(hf_token:str, base_model:str, quantization_type:str, dir_path:str, exp
 
     # figure out config to use based on experiment type
     if experiment_type == 'lora' or experiment_type == 'qlora':
-        peftConfig = prepare_lora_config(targets='linear') # TODO: Micaela - Please add hyperparamters we want to use here
-        peftConfig_attn = prepare_lora_config(targets='attn')
+        peftConfig = prepare_lora_config(r=8, lora_alpha=16, lora_dropout=0.1, bias='none', targets='linear') 
+        peftConfig_attn = prepare_lora_config(r=8, lora_alpha=16, lora_dropout=0.1, bias='none', targets='attn')
     elif experiment_type == 'ia3': 
-        peftConfig = prepare_ia3_config(targets='linear') # TODO: Micaela - Please add hyperparamters we want to use here
+        peftConfig = prepare_ia3_config(targets='linear') 
         peftConfig_attn = prepare_ia3_config(targets='attn')
     elif experiment_type == 'adalora':
-        peftConfig = prepare_adalora_config(targets='linear') # TODO: Micaela -Please add hyperparamters we want to use here
-        peftConfig_attn = prepare_adalora_config(targets='attn')
+        peftConfig = prepare_adalora_config(r=8, lora_alpha=16, lora_dropout=0.1, bias='none', targets='linear') 
+        peftConfig_attn = prepare_adalora_config(r=8, lora_alpha=16, lora_dropout=0.1, bias='none', targets='attn')
     elif experiment_type == 'prompt_tuning': # TODO: Micaela - please add hyperparameters we want to use here
         peftConfig = prepare_prompt_tuning_config()
         peftConfig_attn = None
