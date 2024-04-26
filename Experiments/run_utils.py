@@ -54,11 +54,11 @@ def load_datasets_from_directory(directory_path: str) -> tuple:
 
     return (train_dataset, dev_dataset, test_dataset)
 
-def load_model(base_model: str, bnb_config:BitsAndBytesConfig=None, on_gpu:bool=False, use_cache:bool=False, pretraining_tp:int=1) -> AutoModelForCausalLM:
+def load_model(base_model: str, bnb_config:BitsAndBytesConfig=None, access_token:str=None, on_gpu:bool=False, use_cache:bool=False, pretraining_tp:int=1) -> AutoModelForCausalLM:
     if on_gpu:
-        print("in here")
-        base_model_loaded = AutoModelForCausalLM.from_pretrained(base_model, quantization_config=bnb_config, device_map={"": 0})
-        print(base_model)
+        
+        base_model_loaded = AutoModelForCausalLM.from_pretrained(base_model, token=access_token, quantization_config=bnb_config, device_map={"": 0})
+        
     else:
         base_model_loaded = AutoModelForCausalLM.from_pretrained(base_model)
 
