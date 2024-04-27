@@ -94,7 +94,7 @@ def train_peft(loaded_base_model, loaded_tokenizer, peftConfig, trainer_config, 
 
 if __name__ == '__main__':
     
-    parser = argparse.ArgumentParser(description="Run PEFT-based methods with Hugging Face models.")
+    parser = argparse.ArgumentParser(description="Run PEFT-based methods with Hugging Face models. This CLI requires a GPU to run!")
     # HF Params
     parser.add_argument('--base_model', type=str, required=True, choices=['gemma_2b', 'gemma_7b', 'llama2_7b', 'mistral_7b'], help='The base model to use')
     parser.add_argument('--quantization', type=str, required=True, default='base', choices=['4bits', '4bits_nested', '4bits_norm', '4bits_norm_nested', 'determine_optimal', 'base'], help='The quantization technique to use. Default is to load unquantized base model')
@@ -117,13 +117,15 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
 
-    # only using bnb config for qlora
-    if args.experiment_type != 'qlora':
-        print(f'Not loading quantization for {args.experiment_type}')
-        args.quantization = 'base' 
-    setup(base_model=args.base_model, quantization_type=args.quantization, dir_path=args.data_path,
-          experiment_type=args.experiment_type, on_gpu=args.on_gpu, use_cache=args.use_cache)
-    
+    if torch.cuda.is_available():
+        # only using bnb config for qlora
+        if args.experiment_type != 'qlora':
+            print(f'Not loading quantization for {args.experiment_type}')
+            args.quantization = 'base' 
+        setup(base_model=args.base_model, quantization_type=args.quantization, dir_path=args.data_path,
+            experiment_type=args.experiment_type, on_gpu=args.on_gpu, use_cache=args.use_cache)
+    else:
+        print('Please make sure you have a GPU Available!')
     
 
 
