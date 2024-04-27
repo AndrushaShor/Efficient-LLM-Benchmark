@@ -1,8 +1,11 @@
+import json
 from google.cloud import storage
-
+from google.oauth2 import service_account
 class storage_client():
-    def __init__(self, service_account_path):
-        self.client = storage.Client.from_service_account_json(json_credentials_path=service_account_path)
+    def __init__(self, service_account_path, project_id):
+        self.project_id = project_id
+        self.credentials = service_account.Credentials.from_service_account_file(service_account_path)
+        self.client = storage.Client(project=self.project_id,credentials=self.credentials)
     
     # this will overwrite previous versions of blobs
     def upload_blob(self, bucket_name:str, file_path:str, obj_name:str): 
