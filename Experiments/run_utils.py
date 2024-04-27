@@ -39,14 +39,10 @@ def load_tokenized_dataset(file_path:str) -> Dataset:
 def load_datasets_from_directory(directory_path: str) -> tuple:
     
     expected_files = {"train.json", "dev.json", "test.json"}
-    
-    
     actual_files = set(os.listdir(directory_path))
-    
     
     if expected_files != actual_files:
         raise ValueError(f"Directory must contain exactly these files: {expected_files}")
-    
     
     train_dataset = load_tokenized_dataset(os.path.join(directory_path, "train.json"))
     dev_dataset = load_tokenized_dataset(os.path.join(directory_path, "dev.json"))
@@ -118,7 +114,7 @@ def prepare_peft_model(base_model:AutoModelForCausalLM, tokenizer:AutoTokenizer,
     return peft_model
 
 
-def del_model_of_gpu(model_on_cuda):
+def del_model_off_gpu(model_on_cuda):
     '''
     Deletes model from GPU and clears all the Cache!
     '''
