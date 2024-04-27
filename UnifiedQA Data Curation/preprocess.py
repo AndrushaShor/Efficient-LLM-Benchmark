@@ -65,6 +65,7 @@ def preprocess_unified_qa_dataset(datasets: dict, append_instruction_gemma: bool
             preprocessed_unified_dataset[dataset]['question'] = ["<start_of_turn>user\n" + question + "<end_of_turn>\n\n" for question in preprocessed_unified_dataset[dataset]['question']]
             preprocessed_unified_dataset[dataset]['answer'] = ["<start_of_turn>model\n" + answer + "<end_of_turn>" for answer in preprocessed_unified_dataset[dataset]['answer']]
         if append_instruction_llama: # For Llama 2: https://huggingface.co/docs/optimum-neuron/en/tutorials/fine_tune_llama_7b or https://github.com/mallorbc/llama_dataset_formats/blob/26b29649dca39552e2ecb9d7041468488b9b0f32/README.md
+            preprocessed_unified_dataset[dataset]['question'] = ["Input:\n" + question for question in preprocessed_unified_dataset[dataset]['question']]
             preprocessed_unified_dataset[dataset]['answer'] = ["Output:\n" + answer for answer in preprocessed_unified_dataset[dataset]['answer']]
         if append_instruction_mistral: # For Mistral 7b: https://www.promptingguide.ai/models/mistral-7b
             preprocessed_unified_dataset[dataset]['question'] = ["[INST] " + question + " [/INST]" for question in preprocessed_unified_dataset[dataset]['question']] 
