@@ -1,6 +1,6 @@
-import json
 from google.cloud import storage
 from google.oauth2 import service_account
+
 class storage_client():
     def __init__(self, service_account_path, project_id):
         self.project_id = project_id
