@@ -109,10 +109,8 @@ if __name__ == '__main__':
     
     # GCP Params
     parser.add_argument('--service_account_path', type=str, required=True, help='Service Account location to be able to connect to GCP Storage Buckets')
-    parser.add_arguments('--project_id', type=str, required=True, help='gcp project id to use')
+    parser.add_argument('--project_id', type=str, required=True, help='gcp project id to use')
     parser.add_argument('--storage_bucket', type=str, required=True, help='Location to store the trained model and the checkpoints') 
-
-    
 
     
     args = parser.parse_args()
