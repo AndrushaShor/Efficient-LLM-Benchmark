@@ -2,4 +2,5 @@ UnifiedQA Data Curation/data
 UnifiedQA Data Curation/unprocessed
 UnifiedQA Data Curation/preprocessed
 UnifiedQA Data Curation/tokenized
+constants
 __pycache__
