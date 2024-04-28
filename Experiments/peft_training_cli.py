@@ -3,6 +3,7 @@ Command Line Tool to allow one to run this on a GPU-As-A-Service Provider such a
 '''
 
 import argparse
+import os
 import json
 from gcp_storage_client import storage_client
 from run_utils import *
@@ -14,7 +15,7 @@ def setup(hf_token:str, base_model:str, quantization_type:str, dir_path:str, exp
     determine_optimal = False # used for qlora
     
     # Setup storage
-    gcp_storage_client = storage_client(service_account_path=service_account_path, project_id=project_id)
+    # gcp_storage_client = storage_client(service_account_path=service_account_path, project_id=project_id)
 
     # Get train, dev, and test datasets from dir_path
     train, dev, test = load_datasets_from_directory(dir_path)
@@ -65,33 +66,48 @@ def setup(hf_token:str, base_model:str, quantization_type:str, dir_path:str, exp
         with open(trainer_config_path) as fp:
             trainer_config = json.load(fp)
 
+    
     if not determine_optimal: # train_peft
+        model_name = f'{hf_model}_{experiment_type}_{quantization_type}'
         loaded_base_model, loaded_tokenizer = load_model(base_model=hf_model, bnb_config=bnb_config, access_token=hf_token, on_gpu=on_gpu, use_cache=use_cache)
+        
         ds = {'train': train, 'dev': dev, 'test': test}
-        train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig, trainer_config=trainer_config, ds=ds)
-        train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig_attn, trainer_config=trainer_config, ds=ds)
+        train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig, trainer_config=trainer_config, ds=ds, model_name=model_name)
+        train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig_attn, trainer_config=trainer_config, ds=ds, model_name=model_name)
 
 
     else: # run quantization experiments
-        for quant_config in quant_types: # qlora
+        for i, quant_config in enumerate(quant_types): # qlora
+            quant_names = ['4bits', '4bits_nested', '4bits_norm', '4bits_norm_nested']
+            model_name = f'{hf_model}_{experiment_type}_{quant_names[i]}'
             loaded_base_model, loaded_tokenizer = load_model(base_model=hf_model, bnb_config=quant_config, access_token=hf_token, on_gpu=on_gpu, use_cache=use_cache)
             ds = {'train': train, 'dev': dev, 'test': test}
-            train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig, trainer_config=trainer_config, ds=ds)
-            train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig_attn, trainer_config=trainer_config, ds=ds)
+            train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig, trainer_config=trainer_config, ds=ds, model_name=model_name)
+            train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig_attn, trainer_config=trainer_config, ds=ds, model_name=model_name)
 
 
 
-def train_peft(loaded_base_model, loaded_tokenizer, peftConfig, trainer_config, ds): 
+def train_peft(loaded_base_model, loaded_tokenizer, peftConfig, trainer_config, ds, model_name): 
     assert peftConfig != None, 'Cannot train with PEFT Methods without PEFT Config!'
     
-
+    fp = 'outputs/' + model_name
     peft_model = prepare_peft_model(loaded_base_model, loaded_tokenizer)
     print(peft_model.print_trainable_parameters())
     
     trainer = setup_trainer(model=peft_model, ds=ds, tokenizer=loaded_tokenizer,  peftConfig=peftConfig, custom_args=trainer_config)
     trainer.train()
+    trainer.save_model(fp)
+    util_log = fp + '_trainable_params.txt'
+    with open(util_log, 'w') as f:
+        f.write(peft_model.print_trainable_parameters())
 
-
+def upload_to_gcp(service_account_path:str, project_id:str, storage_bucket:str):
+    storage_client = storage_client(service_account_path=service_account_path, project_id=project_id)
+    # Upload files in outputs directory to GCP
+    for file_name in os.listdir('outputs'):
+        file_path = os.path.join('outputs', file_name)
+        storage_client.upload_blob(bucket_name=storage_bucket, file_path=file_path, obj_name=file_name)
+        
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description="Run PEFT-based methods with Hugging Face models. This CLI requires a GPU to run!")
@@ -108,12 +124,18 @@ if __name__ == '__main__':
     parser.add_argument('--trainer_config', type=str, default=None, required=False, help='path to custom trainer config')
     
     # GCP Params
-    parser.add_argument('--service_account_path', type=str, required=True, help='Service Account location to be able to connect to GCP Storage Buckets')
-    parser.add_argument('--project_id', type=str, required=True, help='gcp project id to use')
-    parser.add_argument('--storage_bucket', type=str, required=True, help='Location to store the trained model and the checkpoints') 
+    parser.add_argument('--service_account_path', type=str, required=False, default=None, help='Service Account location to be able to connect to GCP Storage Buckets')
+    parser.add_argument('--project_id', type=str, required=False, default=None, help='gcp project id to use')
+    parser.add_argument('--storage_bucket', type=str, required=False, help='Location to store the trained model and the checkpoints') 
 
     
     args = parser.parse_args()
+
+    if args.service_account_path is not None:
+        assert args.project_id is not None, "Please provide a project_id if you are using a service account"
+        assert args.storage_bucket is not None, "Please provide a storage bucket if you are using a service account"
+
+        upload_to_gcp(service_account_path=args.service_account_path, project_id=args.project_id, storage_bucket=args.storage_bucket)
 
     if torch.cuda.is_available():
         # only using bnb config for qlora
