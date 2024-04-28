@@ -7,12 +7,7 @@ import logging
 import time
 import pandas as pd
 
-
-from collections import defaultdict
 from datasets import Dataset
-import accelerate
-import bitsandbytes
-
 from peft import LoraConfig, PeftModel, prepare_model_for_kbit_training, IA3Config, AdaLoraConfig, PromptEmbedding, PromptTuningConfig
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, HfArgumentParser, TrainingArguments, pipeline
 from trl import SFTTrainer
@@ -21,6 +16,16 @@ from trl import SFTTrainer
 Please referenced this github for more info on how PeFT was implemented by the wonderful folks at Huggingface:
 https://github.com/huggingface/peft
 '''
+def load_processed_dataset(file_path:str) -> Dataset:
+    data_dict = {}
+    with open(file_path, 'r') as fp:
+        id, questions, answers = json.load(fp)
+
+        data_dict['id'] = id
+        data_dict['questions'] = questions
+        data_dict['answers'] = answers
+
+    return Dataset.from_dict(data_dict)
 
 def load_tokenized_dataset(file_path:str) -> Dataset:
     data_dict = {}
@@ -36,7 +41,7 @@ def load_tokenized_dataset(file_path:str) -> Dataset:
 
     return Dataset.from_dict(data_dict)
 
-def load_datasets_from_directory(directory_path: str) -> tuple:
+def load_datasets_from_directory(directory_path: str, type='tokenized') -> tuple:
     
     expected_files = {"train.json", "dev.json", "test.json"}
     actual_files = set(os.listdir(directory_path))
@@ -44,9 +49,14 @@ def load_datasets_from_directory(directory_path: str) -> tuple:
     if expected_files != actual_files:
         raise ValueError(f"Directory must contain exactly these files: {expected_files}")
     
-    train_dataset = load_tokenized_dataset(os.path.join(directory_path, "train.json"))
-    dev_dataset = load_tokenized_dataset(os.path.join(directory_path, "dev.json"))
-    test_dataset = load_tokenized_dataset(os.path.join(directory_path, "test.json"))
+    if type == 'tokenized':
+        train_dataset = load_tokenized_dataset(os.path.join(directory_path, "train.json"))
+        dev_dataset = load_tokenized_dataset(os.path.join(directory_path, "dev.json"))
+        test_dataset = load_tokenized_dataset(os.path.join(directory_path, "test.json"))
+    else:
+        train_dataset = load_processed_dataset(os.path.join(directory_path, "train.json"))
+        dev_dataset = load_processed_dataset(os.path.join(directory_path, "dev.json"))
+        test_dataset = load_processed_dataset(os.path.join(directory_path, "test.json"))
 
     return (train_dataset, dev_dataset, test_dataset)
 
