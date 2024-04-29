@@ -142,13 +142,18 @@ def setup_trainer(model, ds, tokenizer, peft_config, custom_args=None):
         "per_device_train_batch_size": 4,
         "per_device_eval_batch_size": 4,
         "log_level": "debug",
-        "save_steps": 50,
-        "logging_steps": 50,
+        "save_strategy": "steps",
+        "save_steps": 25,
+        "logging_steps": 25,
         "learning_rate": 2e-5,
+        "group_by_length": True,
         "eval_steps": 50,
         "max_steps": 300,
         "warmup_steps": 30,
         "lr_scheduler_type": "linear",
+        "weight_decay":.001,
+        "max_grad_norm":.3,
+        "report_to":"tensorboard"
     }
 
     if custom_args:
@@ -159,6 +164,7 @@ def setup_trainer(model, ds, tokenizer, peft_config, custom_args=None):
 
     trainer = SFTTrainer(
         model=model,
+        dataset_text_field="text",
         train_dataset=ds['train'],
         eval_dataset=ds['dev'],
         peft_config=peft_config,

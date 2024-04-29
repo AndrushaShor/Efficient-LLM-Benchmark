@@ -91,14 +91,20 @@ def train_peft(loaded_base_model, loaded_tokenizer, peftConfig, trainer_config, 
     assert peftConfig != None, 'Cannot train with PEFT Methods without PEFT Config!'
     
     fp = 'outputs/' + model_name
+    tokenizer_name = fp + '_tokenizer'
+    metrics_log = fp + '_metrics.txt'
+    evaluate_log = fp + '_evaluate.txt'
     peft_model = prepare_peft_model(loaded_base_model, loaded_tokenizer)
     print(peft_model.print_trainable_parameters())
     
     trainer = setup_trainer(model=peft_model, ds=ds, tokenizer=loaded_tokenizer,  peftConfig=peftConfig, custom_args=trainer_config)
     trainer.train()
     trainer.save_model(fp)
+    
+    
+    trainer.save_mode(tokenizer_name)
 
-    metrics_log = fp + '_metrics.txt'
+    
     with open(metrics_log, 'w') as f:
         f.write(trainer.state.log_history)
         
@@ -106,6 +112,10 @@ def train_peft(loaded_base_model, loaded_tokenizer, peftConfig, trainer_config, 
     with open(util_log, 'w') as f:
         f.write(peft_model.print_trainable_parameters())
 
+    
+
+    with open(evaluate_log, 'w') as f:
+        f.write(trainer.evaluate())
 def upload_to_gcp(service_account_path:str, project_id:str, storage_bucket:str):
     storage_client = storage_client(service_account_path=service_account_path, project_id=project_id)
     # Upload files in outputs directory to GCP
@@ -136,19 +146,23 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
 
+    # Check to see if user wants to upload results to GCP
     if args.service_account_path is not None:
         assert args.project_id is not None, "Please provide a project_id if you are using a service account"
         assert args.storage_bucket is not None, "Please provide a storage bucket if you are using a service account"
 
         upload_to_gcp(service_account_path=args.service_account_path, project_id=args.project_id, storage_bucket=args.storage_bucket)
 
-    if torch.cuda.is_available():
+    # Otherwise user wants to run experiments
+    elif torch.cuda.is_available():
         # only using bnb config for qlora
         if args.experiment_type != 'qlora':
             print(f'Not loading quantization for {args.experiment_type}')
             args.quantization = 'base' 
         setup(base_model=args.base_model, quantization_type=args.quantization, dir_path=args.data_path,
             experiment_type=args.experiment_type, on_gpu=args.on_gpu, use_cache=args.use_cache)
+    
+    # otherwise user does not have a GPU
     else:
         print('Please make sure you have a GPU and CUDA installed!')
     
