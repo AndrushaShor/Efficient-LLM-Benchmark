@@ -1,3 +1,4 @@
+import re
 import os
 import time
 import json
@@ -83,7 +84,13 @@ def predict(trained_model:SFTTrainer, tokenizer:AutoTokenizer, eval_sample:Datas
     else:
         assert 'input_ids' in list(eval_sample.features.keys()), f"Eval Data needs the following column: 'input_ids', but instead has { list(eval_sample.features.keys()) }"
         token_col = 'input_ids'
-    eval_sample = eval_sample.with_format("torch")
+
+    if torch.cuda.is_available():
+      print('cuda is available')
+      eval_sample.set_format("torch", device="cuda")
+    else:
+      eval_sample.set_format("torch")
+
     predictions = []
     latencies = []
     for inp in eval_sample[token_col]:
@@ -100,21 +107,34 @@ def predict(trained_model:SFTTrainer, tokenizer:AutoTokenizer, eval_sample:Datas
 
 
 def strip_output_text(output:str, model_name:str):
-  processed = output
   if model_name == 'google/gemma-7b':
-    if 'Answer:' in processed:
-      processed = processed[processed.find("Answer:")+7:]
-    if 'model' in processed:
-      processed = processed[processed.find('model')+5:]
+    out = output[output.find("model"):output.find("Explanation")]
     # Returns the whole input string as well; cut off this part
-    for repl in ['\n',  'Step 1/', 'Step 2/',]:
-        processed = processed.replace(repl, '')
-    for strp in ['The answer is:']:
-        processed = processed.strip(strp)
-
-  return processed
-
-
+    for repl in ['model']:
+        out = out.replace(repl, '')
+    out = re.sub('[^a-zA-Z\s]+', '', out)
+    out = re.sub('\s+', ' ', out).strip()
+    return out
+  elif model_name == 'meta-llama/Llama-2-7b-hf':
+        start_idx = output.find("Output:") + len("Output:")
+        end_idx = output.find("\n\n", start_idx)
+        if end_idx == -1:
+            end_idx = len(output)
+        out = output[start_idx:end_idx].strip()
+        out = re.sub('[^a-zA-Z\s]+', '', out)
+        out = re.sub(r'\bbinbash\b|\becho\b', '', out, flags=re.IGNORECASE)
+        out = re.sub('\s+', ' ', out).strip()
+        return out
+  elif model_name == 'mistralai/Mistral-7B-v0.1':
+        start_idx = output.find("Output:") + len("Output:")
+        end_idx = output.find("\n\n", start_idx)
+        if end_idx == -1:
+            end_idx = len(output)
+        out = output[start_idx:end_idx].strip()
+        out = re.sub('[^a-zA-Z\s]+', '', out)
+        out = re.sub(r'\bbinbash\b|\becho\b', '', out, flags=re.IGNORECASE)
+        out = re.sub('\s+', ' ', out).strip()
+        return out
 
 def strip_answers(answer_text:str, model_name:str):
   out = answer_text
@@ -122,9 +142,9 @@ def strip_answers(answer_text:str, model_name:str):
     for strp in ['<start_of_turn>model\n', '<end_of_turn>']:
       out = out.replace(strp, '')
   elif model_name == 'meta-llama/Llama-2-7b-hf':
-    out = []
-  elif model_name == 'mistralai/Mistral-7B-v0.1':
-    out = []
+    out = out.replace("Output:\n", '')
+  out = re.sub('[^a-zA-Z\s]+', '', out)
+  out = re.sub('\s+', ' ', out).strip()
   return out
 
 
