@@ -200,27 +200,43 @@ def throughput(latencies:list, predictions:list):
     return avg_through_put
 
 def compute_rouge(predictions:list, ground_truth:list):
-    print('computing rouge')
+    print('computing similarity for summarization')
     scores = rouge.compute(predictions=predictions, references=ground_truth, use_aggregator=False)
     return scores['rougeL'] # longest common subsequence-based ROUGE
 
 
+def jaccard(str1, str2):
+    if str1 == str2:
+        return 1.0
+    if " " in str1 or " " in str2:
+        str1_split = str1.split(" ")
+        str2_split = str2.split(" ")
+        overlap = list(set(str1_split) & set(str2_split))
+        return len(overlap) / max(len(str1_split), len(str2_split))
+    else:
+        return 0.0
+
+            
 def compute_similarity(predictions:list, ground_truth:list):
-    print('computing cosine similarity')
-    scores = cosine_similarity.compute(predictions=predictions, references=ground_truth, model_type="distilbert-base-uncased")
-    return scores['f1']
+    print('computing similarity for multiple choice')
+    # scores = cosine_similarity.compute(predictions=predictions, references=ground_truth, model_type="distilbert-base-uncased")
+    # scores = scores['f1']
+    scores = []
+    for p, l in zip(predictions, ground_truth):
+      scores.append(jaccard(p,l))
+    return scores
 
 
 def compute_scores(original_dataset:str, predictions:list, ground_truth:list):
 
     ds_metric_map = {
-        'ai2_science_elementary': 'cosine_similarity',
-        'ai2_science_middle': 'cosine_similarity',
-        'arc_easy': 'cosine_similarity',
-        'arc_hard': 'cosine_similarity',
+        'ai2_science_elementary': 'mc',
+        'ai2_science_middle': 'mc',
+        'arc_easy': 'mc',
+        'arc_hard': 'mc',
         'narrativeqa': 'rouge',
-        'openbookqa' : 'cosine_similarity',
-        'race_string': 'cosine_similarity'}
+        'openbookqa' : 'mc',
+        'race_string': 'mc'}
 
     assert original_dataset in ds_metric_map, f"Please define a metric mapping for dataset {original_dataset}"
 
@@ -228,9 +244,8 @@ def compute_scores(original_dataset:str, predictions:list, ground_truth:list):
 
     if metric == 'rouge':
         scores = compute_rouge(predictions, ground_truth)
-    elif metric == 'cosine_similarity':
+    elif metric == 'mc':
         scores = compute_similarity(predictions, ground_truth)
-
 
     return scores
 
