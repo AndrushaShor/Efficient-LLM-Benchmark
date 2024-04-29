@@ -97,6 +97,11 @@ def train_peft(loaded_base_model, loaded_tokenizer, peftConfig, trainer_config, 
     trainer = setup_trainer(model=peft_model, ds=ds, tokenizer=loaded_tokenizer,  peftConfig=peftConfig, custom_args=trainer_config)
     trainer.train()
     trainer.save_model(fp)
+
+    metrics_log = fp + '_metrics.txt'
+    with open(metrics_log, 'w') as f:
+        f.write(trainer.state.log_history)
+        
     util_log = fp + '_trainable_params.txt'
     with open(util_log, 'w') as f:
         f.write(peft_model.print_trainable_parameters())

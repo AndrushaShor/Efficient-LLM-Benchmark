@@ -136,7 +136,6 @@ def del_model_off_gpu(model_on_cuda):
 def setup_trainer(model, ds, tokenizer, peft_config, custom_args=None):
 
     default_args = {
-        "output_dir": "./results_qlora",
         "evaluation_strategy": "steps",
         "do_eval": True,
         "optim": "paged_adamw_8bit",
