@@ -115,12 +115,14 @@ def compute_accuracy(scores:list):
         if score == 1:
             num_correct += 1
     
-    accuracy = 100.0 * (sum(num_correct) / len(scores))
+    accuracy = 100.0 * ((num_correct) / len(scores))
     return accuracy
 
+
+# This is currently wrong; needs a string for model_id that points to a TRAINED model (which we don't have yet)
 def compute_ppl(predictions, trained_model):
 
-    ppl = perplexity.compute(predictions=pred_ds['predictions'], model_id=trained_model)['mean_perplexity']
+    ppl = perplexity.compute(predictions=predictions, model_id=trained_model)['mean_perplexity']
     return ppl
 
 def throughput(latencies:list, predictions:list):
