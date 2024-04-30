@@ -168,7 +168,6 @@ def setup_trainer(model, ds, tokenizer, peft_config, custom_args=None):
         train_dataset=ds['train'],
         eval_dataset=ds['dev'],
         peft_config=peft_config,
-        dataset_text_field="text",
         max_seq_length=512,
         tokenizer=tokenizer,
         args=training_arguments,
@@ -177,9 +176,28 @@ def setup_trainer(model, ds, tokenizer, peft_config, custom_args=None):
     return trainer
 
 
-def speculative_decoding(model, assistant_model, inputs, tokenizer):
-    outputs = model.generate(**inputs, assistant_model=assistant_model)
-    return tokenizer.batch_decode(outputs, skip_special_tokens=True)
+def speculative_decoding(full_model:AutoModelForCausalLM, tokenizer:AutoTokenizer, assistant_model:AutoModelForCausalLM, eval_sample:Dataset):
+    
+    if torch.cuda.is_available():
+      print('cuda is available')
+      eval_sample.set_format("torch", device="cuda")
+    else:
+      eval_sample.set_format("torch")
+
+    predictions = []
+    latencies = []
+
+    for inp in eval_sample['input_ids']:
+        # inp = torch.tensor(inp, dtype=int)
+        start = time.time()
+        outp = full_model.generate(inp, assistant_model=assistant_model, max_new_tokens=20, output_scores=True)
+        end = time.time()
+        pred = tokenizer.batch_decode(outp, skip_special_tokens=True)
+
+        predictions.append(pred[0])
+        latencies.append(end - start)
+
+    return predictions, latencies
 
 
 def throughput(model, assistant_model, tokenizer, inputs, max_new_tokens=200, temperature=.5):

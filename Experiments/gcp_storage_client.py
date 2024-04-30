@@ -1,3 +1,4 @@
+import os
 from google.cloud import storage
 from google.oauth2 import service_account
 
@@ -27,3 +28,15 @@ class storage_client():
         bucket = self.client.get_bucket(bucket_name)
         blob = bucket.blob(obj_name)
         blob.delete()
+
+    # download all the files in a directory matching a pattern
+    def download_dir(self, bucket_name:str, prefix:str, exclude:str, destination_folder:str):
+        bucket = self.client.get_bucket(bucket_name)
+
+        blobs = bucket.list_blobs(prefix=prefix)  # Get list of files
+        os.makedirs(f'{destination_folder}/{prefix}', exist_ok=True)
+        for blob in blobs:
+            if exclude not in blob.name:
+                blob.download_to_filename(f'{destination_folder}/{blob.name}')  # Download
+
+  

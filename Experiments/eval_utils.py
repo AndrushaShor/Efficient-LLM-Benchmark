@@ -7,12 +7,12 @@ import evaluate
 import datasets
 from datasets import Dataset
 from trl import SFTTrainer
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from peft import AutoPeftModelForCausalLM
 rouge = evaluate.load("rouge")
-cosine_similarity = evaluate.load("bertscore")
-perplexity = evaluate.load("perplexity", module_type="metric")
-
-
+# cosine_similarity = evaluate.load("bertscore")
+# perplexity = evaluate.load("perplexity", module_type="metric")
+CONFIG_4BITS = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16) # For QLORA
 
 # Prompt ICL functions
 def preprocess_prompt_icl(hf_model: str, loaded_tokenizer:AutoTokenizer, ds: Dataset, experiment, k_shot: int=1,
@@ -77,7 +77,7 @@ def process_samples(sample_data, model_name, prompt_insert, tokenizer):
 
 # Prediction functions
 
-def predict(trained_model:SFTTrainer, tokenizer:AutoTokenizer, eval_sample:Dataset, model_name:str, prompted:bool=False):
+def predict(trained_model:AutoModelForCausalLM, tokenizer:AutoTokenizer, eval_sample:Dataset, prompted:bool=False):
     if prompted==True:
         assert 'prompt_tokenizations' in list(eval_sample.features.keys()), f"Eval Data needs the following column: 'prompt_tokenizations', but instead has { list(eval_sample.features.keys()) }"
         token_col = 'prompt_tokenizations'
@@ -96,9 +96,9 @@ def predict(trained_model:SFTTrainer, tokenizer:AutoTokenizer, eval_sample:Datas
     for inp in eval_sample[token_col]:
         # inp = torch.tensor(inp, dtype=int)
         start = time.time()
-        outp = trained_model.generate(inp, max_new_tokens=20, return_dict_in_generate=True, output_scores=True)
+        outp = trained_model.generate(inp, max_new_tokens=20, output_scores=True)
         end = time.time()
-        pred = tokenizer.batch_decode(outp['sequences'], skip_special_tokens=True)
+        pred = tokenizer.batch_decode(outp, skip_special_tokens=True)
 
         predictions.append(pred[0])
         latencies.append(end - start)
@@ -148,7 +148,7 @@ def strip_answers(answer_text:str, model_name:str):
   return out
 
 
-def prediction_wrapper(trained_model:SFTTrainer, tokenizer:AutoTokenizer, ds:Dataset, model_name:str, add_prompt:bool=False, sample:int=1000, seed:int=42, save_path:str=''):
+def prediction_wrapper(trained_model:AutoModelForCausalLM, tokenizer:AutoTokenizer, ds:Dataset, model_name:str, add_prompt:bool=False, sample:int=1000, seed:int=42, save_path:str=''):
     def add_dataset_name_col(ds):
         original_dataset = []
         for example in ds:
@@ -167,7 +167,7 @@ def prediction_wrapper(trained_model:SFTTrainer, tokenizer:AutoTokenizer, ds:Dat
     else:
         eval_sample = add_dataset_name_col(ds)
     print("eval_sample generated")
-    predictions, latencies = predict(trained_model, tokenizer, eval_sample, model_name, prompted=add_prompt)
+    predictions, latencies = predict(trained_model, tokenizer, eval_sample, prompted=add_prompt)
     print("predictions generated")
     # predictions = [predictions[i][len(eval_sample['questions'][i]):] for i in range(len(eval_sample['questions']))]
     predictions = [strip_output_text(s, model_name) for s in predictions]
