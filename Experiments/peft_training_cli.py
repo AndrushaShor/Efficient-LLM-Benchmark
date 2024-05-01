@@ -3,14 +3,18 @@ Command Line Tool to allow one to run this on a GPU-As-A-Service Provider such a
 '''
 
 import argparse
+import gc
 import os
 import json
+import peft
+import torch
+import transformers
 from gcp_storage_client import storage_client
 from run_utils import *
 from quantization import * 
 
 
-def setup(hf_token:str, base_model:str, quantization_type:str, dir_path:str, experiment_type:str, on_gpu:bool, use_cache:bool, trainer_config_path:str, service_account_path:str, project_id:str, storage_bucket:str):
+def setup(hf_token:str, base_model:str, quantization_type:str, dir_path:str, experiment_type:str, on_gpu:bool, use_cache:bool, trainer_config_path:str=None, service_account_path:str=None, project_id:str=None, storage_bucket:str=None):
     quant_types = [CONFIG_4BITS, CONFIG_4BITS_NESTED, CONFIG_4BITS_NORM, CONFIG_4BITS_NORM_NESTED] # all possible bitsandbytes configs
     determine_optimal = False # used for qlora
     
@@ -19,7 +23,14 @@ def setup(hf_token:str, base_model:str, quantization_type:str, dir_path:str, exp
 
     # Get train, dev, and test datasets from dir_path
     train, dev, test = load_datasets_from_directory(dir_path)
-
+    # Remove bad input_ids
+    ds = {'train': train, 'dev': dev, 'test': test}
+    print(ds['train'])
+    ds['train'] = ds['train'].remove_columns(['input_ids'])
+    ds['dev'] = ds['dev'].remove_columns(['input_ids'])
+    ds['train'] = ds['train'].shuffle(seed=42)
+    ds['dev'] = ds['dev'].shuffle(seed=42)
+    
     # figure out hf path to model based on base model
     if base_model == 'gemma_2b':
         hf_model = 'google/gemma-2b' # Gemma-2b
@@ -29,12 +40,12 @@ def setup(hf_token:str, base_model:str, quantization_type:str, dir_path:str, exp
         hf_model = 'meta-llama/Llama-2-7b-hf' # Llama2-7b
     elif base_model == 'mistral_7b':
         hf_model = 'mistralai/Mistral-7B-v0.1' # Mistral-7b 
-
+    print(f"Base model: {hf_model}")
 
     # figure out what quantization type to use based on quantization_type
     if quantization_type == 'base':
         bnb_config = None
-    if quantization_type == '4bits':
+    elif quantization_type == '4bits':
         bnb_config = quant_types[0]
     elif quantization_type == '4bits_nested':
         bnb_config = quant_types[1]
@@ -45,18 +56,25 @@ def setup(hf_token:str, base_model:str, quantization_type:str, dir_path:str, exp
     else:
         determine_optimal = True
 
+    print(f"Quantization Type: {quantization_type}")
+    print(f"BNB Config: {bnb_config}")
+    print(f"")
     # figure out config to use based on experiment type
     if experiment_type == 'lora' or experiment_type == 'qlora':
+        print("Preparing Lora or QLora")
         peftConfig = prepare_lora_config(r=8, lora_alpha=16, lora_dropout=0.1, bias='none', targets='linear') 
         peftConfig_attn = prepare_lora_config(r=8, lora_alpha=16, lora_dropout=0.1, bias='none', targets='attn')
     elif experiment_type == 'ia3': 
+        print("Preparing ia3")
         peftConfig = prepare_ia3_config(targets='linear') 
         peftConfig_attn = prepare_ia3_config(targets='attn')
     elif experiment_type == 'adalora':
+        print("Preparing adalora")
         peftConfig = prepare_adalora_config(r=8, lora_alpha=16, lora_dropout=0.1, bias='none', targets='linear') 
         peftConfig_attn = prepare_adalora_config(r=8, lora_alpha=16, lora_dropout=0.1, bias='none', targets='attn')
     elif experiment_type == 'prompt_tuning':
-        peftConfig = prepare_prompt_tuning_config(prompt_tuning_init_task="Let's think step by step.", num_virtual_tokens=10)
+        print("Preparing Prompt Tuning")
+        peftConfig = prepare_prompt_tuning_config(prompt_tuning_init_task="Let's think step by step.", num_virtual_tokens=10, tokenizer_model = hf_model)
         peftConfig_attn = None
 
 
@@ -68,60 +86,76 @@ def setup(hf_token:str, base_model:str, quantization_type:str, dir_path:str, exp
 
     
     if not determine_optimal: # train_peft
-        model_name = f'{hf_model}_{experiment_type}_{quantization_type}'
+        print(f"Running: {base_model}_{experiment_type}_{quantization_type}")
+        
+        model_name_linear = f'{base_model}_{experiment_type}_{quantization_type}_linear'
+        # model_name_attn = f'{base_model}_{experiment_type}_{quantization_type}_attn'
         loaded_base_model, loaded_tokenizer = load_model(base_model=hf_model, bnb_config=bnb_config, access_token=hf_token, on_gpu=on_gpu, use_cache=use_cache)
         
-        ds = {'train': train, 'dev': dev, 'test': test}
-        train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig, trainer_config=trainer_config, ds=ds, model_name=model_name)
-        train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig_attn, trainer_config=trainer_config, ds=ds, model_name=model_name)
+        
+        train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig, trainer_config=trainer_config, ds=ds, model_name=model_name_linear)
+        # train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig_attn, trainer_config=trainer_config, ds=ds, model_name=model_name_attn)
 
 
     else: # run quantization experiments
+
+        print("Running determine optimal quant config")
         for i, quant_config in enumerate(quant_types): # qlora
+            
             quant_names = ['4bits', '4bits_nested', '4bits_norm', '4bits_norm_nested']
-            model_name = f'{hf_model}_{experiment_type}_{quant_names[i]}'
+            print(f"Running: {base_model}_{experiment_type}_{quant_names[i]}")
+            model_name = f'{base_model}_{experiment_type}_{quant_names[i]}'
             loaded_base_model, loaded_tokenizer = load_model(base_model=hf_model, bnb_config=quant_config, access_token=hf_token, on_gpu=on_gpu, use_cache=use_cache)
-            ds = {'train': train, 'dev': dev, 'test': test}
+            #ds = {'train': train, 'dev': dev, 'test': test}
             train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig, trainer_config=trainer_config, ds=ds, model_name=model_name)
             train_peft(loaded_base_model=loaded_base_model, loaded_tokenizer=loaded_tokenizer, peftConfig=peftConfig_attn, trainer_config=trainer_config, ds=ds, model_name=model_name)
 
 
 
-def train_peft(loaded_base_model, loaded_tokenizer, peftConfig, trainer_config, ds, model_name): 
+def train_peft(loaded_base_model, loaded_tokenizer, peftConfig, trainer_config, ds, model_name, seed=42, eval_samples=200): 
     assert peftConfig != None, 'Cannot train with PEFT Methods without PEFT Config!'
+
+    gc.collect()
+    torch.cuda.empty_cache() # Remove any cache on the GPU 
+
+
     
-    fp = 'outputs/' + model_name
-    tokenizer_name = fp + '_tokenizer'
-    metrics_log = fp + '_metrics.txt'
-    evaluate_log = fp + '_evaluate.txt'
+    dir_fp = model_name + '_outputs/' # for unique directory for checkpoints
+    os.makedirs(dir_fp, exist_ok=True)
+    
+    fp = dir_fp + "/" + model_name + '_final' # model_name
+    tokenizer_name = fp + '_tokenizer' # '
+    metrics_log = fp + '_metrics.json'
+    
+    util_log = fp + '_trainable_params.txt'
     peft_model = prepare_peft_model(loaded_base_model, loaded_tokenizer)
-    print(peft_model.print_trainable_parameters())
+
     
-    trainer = setup_trainer(model=peft_model, ds=ds, tokenizer=loaded_tokenizer,  peftConfig=peftConfig, custom_args=trainer_config)
+    trainer = setup_trainer(model=peft_model, ds=ds, tokenizer=loaded_tokenizer, output_dir=dir_fp, peft_config=peftConfig, custom_args=trainer_config)
+
+    
+    trainable_params = print_trainable_parameters(peft_model)
+    with open(util_log, 'w') as f:
+        f.write(trainable_params)
+
+    # conducting training
     trainer.train()
     trainer.save_model(fp)
     
     
-    trainer.save_mode(tokenizer_name)
+    trainer.save_model(tokenizer_name)
 
     
     with open(metrics_log, 'w') as f:
-        f.write(trainer.state.log_history)
+        json.dump(trainer.state.log_history, f)  
         
-    util_log = fp + '_trainable_params.txt'
-    with open(util_log, 'w') as f:
-        f.write(peft_model.print_trainable_parameters())
-
-    
-
-    with open(evaluate_log, 'w') as f:
-        f.write(trainer.evaluate())
 def upload_to_gcp(service_account_path:str, project_id:str, storage_bucket:str):
-    storage_client = storage_client(service_account_path=service_account_path, project_id=project_id)
-    # Upload files in outputs directory to GCP
-    for file_name in os.listdir('outputs'):
-        file_path = os.path.join('outputs', file_name)
-        storage_client.upload_blob(bucket_name=storage_bucket, file_path=file_path, obj_name=file_name)
+    client = storage_client(service_account_path=service_account_path, project_id=project_id)
+    client.upload_directory(storage_bucket, 'results')
+    # # Upload files in outputs directory to GCP
+    # for file_name in os.listdir('outputs'):
+    #     file_path = os.path.join('outputs', file_name)
+    #     storage_client.upload_blob(bucket_name=storage_bucket, file_path=file_path, obj_name=file_name)
         
 if __name__ == '__main__':
     
@@ -156,10 +190,10 @@ if __name__ == '__main__':
     # Otherwise user wants to run experiments
     elif torch.cuda.is_available():
         # only using bnb config for qlora
-        if args.experiment_type != 'qlora':
-            print(f'Not loading quantization for {args.experiment_type}')
-            args.quantization = 'base' 
-        setup(base_model=args.base_model, quantization_type=args.quantization, dir_path=args.data_path,
+        # if args.experiment_type != 'qlora':
+        #     print(f'Not loading quantization for {args.experiment_type}')
+        #     args.quantization = 'base' 
+        setup(hf_token=args.hf_token, base_model=args.base_model, quantization_type=args.quantization, dir_path=args.data_path,
             experiment_type=args.experiment_type, on_gpu=args.on_gpu, use_cache=args.use_cache)
     
     # otherwise user does not have a GPU
