@@ -15,8 +15,9 @@ rouge = evaluate.load("rouge")
 CONFIG_4BITS = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16) # For QLORA
 
 # Prompt ICL functions
-def preprocess_prompt_icl(hf_model: str, loaded_tokenizer:AutoTokenizer, ds: Dataset, experiment, k_shot: int=1,
-               max_k_shot_token_length=200, seed=42, sample: int=1000):
+def preprocess_prompt_icl(hf_model: str, loaded_tokenizer:AutoTokenizer, ds: Dataset, experiment:str, 
+                k_shot: int=1, prompt_insert:str= "Answer this question truthfully",
+                max_k_shot_token_length=200, seed=42, sample: int=1000):
     ds = ds.shuffle(seed=seed)
     eval_sample = ds.select(range(sample))
 
@@ -26,24 +27,22 @@ def preprocess_prompt_icl(hf_model: str, loaded_tokenizer:AutoTokenizer, ds: Dat
         tokens = loaded_tokenizer(example['text'], return_tensors="pt", truncation=False)
         return tokens.input_ids.size(1) <= max_k_shot_token_length
 
-
-
     print(f'Running prompt injection for: {experiment}')
-    prompt_insert = "Answer this question truthfully:"
 
     if experiment == 'zero_shot':
-        prompt_insert = "Answer the question truthfully:"
+        prompt_insert = f'{prompt_insert}:'
         results = process_samples(eval_sample, hf_model, prompt_insert, loaded_tokenizer)
 
     elif experiment == 'k_shot':
-        filtered_dataset_for_k_shot =  ds.filter(filter_by_token_length)
+        filtered_dataset_for_k_shot =  ds.filter(filter_by_token_length).shuffle(seed=7)
         print(f"Number of examples in the dataset: {len(filtered_dataset_for_k_shot)}")
         if len(filtered_dataset_for_k_shot) < k_shot:
             raise ValueError(f"Dataset has less than {k_shot} examples")
-
-        prompt_insert = "Answer the question truthfully. Follow these examples:"
-        prompt_insert += "\n".join(filtered_dataset_for_k_shot['questions'][:k_shot])
-        prompt_insert += "\n"
+        prompt_insert = f"{prompt_insert}. Follow these examples:"
+        for q, a in zip(filtered_dataset_for_k_shot['questions'][:k_shot], filtered_dataset_for_k_shot['answers'][:k_shot]):
+            prompt_insert += "\n"
+            prompt_insert += (q + a)
+            prompt_insert += "\n"
         prompt_insert += 'Question:'
 
         results = process_samples(eval_sample, hf_model, prompt_insert, loaded_tokenizer)
@@ -71,7 +70,6 @@ def process_samples(sample_data, model_name, prompt_insert, tokenizer):
         new_tokenizations.append(inputs.input_ids)
     processed_samples = {'prompt_tokenizations': new_tokenizations, 'original_dataset': original_dataset}
     out = Dataset.from_dict(processed_samples)
-    print(out['prompt_tokenizations'])
     return out
 
 
@@ -90,7 +88,6 @@ def predict(trained_model:AutoModelForCausalLM, tokenizer:AutoTokenizer, eval_sa
       eval_sample.set_format("torch", device="cuda")
     else:
       eval_sample.set_format("torch")
-
     predictions = []
     latencies = []
     for inp in eval_sample[token_col]:
@@ -99,7 +96,6 @@ def predict(trained_model:AutoModelForCausalLM, tokenizer:AutoTokenizer, eval_sa
         outp = trained_model.generate(inp, max_new_tokens=20, output_scores=True)
         end = time.time()
         pred = tokenizer.batch_decode(outp, skip_special_tokens=True)
-
         predictions.append(pred[0])
         latencies.append(end - start)
 
@@ -107,34 +103,42 @@ def predict(trained_model:AutoModelForCausalLM, tokenizer:AutoTokenizer, eval_sa
 
 
 def strip_output_text(output:str, model_name:str):
-  if model_name == 'google/gemma-7b':
-    out = output[output.find("model"):output.find("Explanation")]
-    # Returns the whole input string as well; cut off this part
-    for repl in ['model']:
-        out = out.replace(repl, '')
-    out = re.sub('[^a-zA-Z\s]+', '', out)
-    out = re.sub('\s+', ' ', out).strip()
-    return out
+  out = output 
+  xplicit_answer_idx = out.find("Answer")
+  if xplicit_answer_idx > 0:
+        start_idx = xplicit_answer_idx + len("Answer")
+  if model_name == 'google/gemma-7b' or model_name == 'google/gemma-2b':
+        model_start = out.find("model")
+        if model_start > 0:
+            start_idx = model_start + len("model")
+        else:
+            start_idx = 0
+        out = out[start_idx:]
+        out = re.sub('[^a-zA-Z\s]+', '', out)
+        out = re.sub('\s+', ' ', out).strip()
+        return out
   elif model_name == 'meta-llama/Llama-2-7b-hf':
-        start_idx = output.find("Output:") + len("Output:")
-        end_idx = output.find("\n\n", start_idx)
+        start_idx = out.find("Output:") + len("Output:")
+        end_idx = out.find("\n\n", start_idx)
         if end_idx == -1:
-            end_idx = len(output)
-        out = output[start_idx:end_idx].strip()
+            end_idx = len(out)
+        out = out[start_idx:end_idx].strip()
         out = re.sub('[^a-zA-Z\s]+', '', out)
         out = re.sub(r'\bbinbash\b|\becho\b', '', out, flags=re.IGNORECASE)
         out = re.sub('\s+', ' ', out).strip()
         return out
   elif model_name == 'mistralai/Mistral-7B-v0.1':
-        start_idx = output.find("Output:") + len("Output:")
-        end_idx = output.find("\n\n", start_idx)
+        start_idx = out.find("Output:") + len("Output:")
+        end_idx = out.find("\n\n", start_idx)
         if end_idx == -1:
-            end_idx = len(output)
-        out = output[start_idx:end_idx].strip()
+            end_idx = len(out)
+        out = out[start_idx:end_idx].strip()
         out = re.sub('[^a-zA-Z\s]+', '', out)
         out = re.sub(r'\bbinbash\b|\becho\b', '', out, flags=re.IGNORECASE)
         out = re.sub('\s+', ' ', out).strip()
         return out
+  else:
+      print("model_name should be one of 'google/gemma-7b', 'google/gemma-2b', 'meta-llama/Llama-2-7b-hf', or 'mistralai/Mistral-7B-v0.1'")
 
 def strip_answers(answer_text:str, model_name:str):
   out = answer_text
@@ -148,7 +152,7 @@ def strip_answers(answer_text:str, model_name:str):
   return out
 
 
-def prediction_wrapper(trained_model:AutoModelForCausalLM, tokenizer:AutoTokenizer, ds:Dataset, model_name:str, add_prompt:bool=False, sample:int=1000, seed:int=42, save_path:str=''):
+def prediction_wrapper(trained_model:AutoModelForCausalLM, tokenizer:AutoTokenizer, ds:Dataset, model_name:str, add_prompt:str='', sample:int=1000, seed:int=42, save_path:str=''):
     def add_dataset_name_col(ds):
         original_dataset = []
         for example in ds:
@@ -156,14 +160,16 @@ def prediction_wrapper(trained_model:AutoModelForCausalLM, tokenizer:AutoTokeniz
         eval_sample = datasets.concatenate_datasets([ds, Dataset.from_dict({'original_dataset': original_dataset})], axis=1)
         return eval_sample
 
-    if add_prompt == True and sample > 0:
-         eval_sample = preprocess_prompt_icl(model_name, tokenizer, ds, experiment='zero_shot', sample=sample, seed=seed)
-    elif add_prompt == False and sample > 0:
+    if len(add_prompt) > 0 and sample > 0:
+         eval_sample = preprocess_prompt_icl(
+         model_name, tokenizer, ds, experiment='zero_shot', prompt_insert=add_prompt, sample=sample, seed=seed)
+    elif len(add_prompt) == 0 and sample > 0:
         ds = ds.shuffle(seed=seed)
         sample_data = ds.select(range(sample))
         eval_sample = add_dataset_name_col(sample_data)
-    elif add_prompt == True and sample == 0:
-         eval_sample = preprocess_prompt_icl(model_name, tokenizer, ds, experiment='zero_shot', sample=ds.shape[0], seed=seed)
+    elif len(add_prompt) > 0 and sample == 0:
+         eval_sample = preprocess_prompt_icl(
+          model_name, tokenizer, ds, experiment='zero_shot', prompt_insert=add_prompt, sample=ds.shape[0], seed=seed)
     else:
         eval_sample = add_dataset_name_col(ds)
     print("eval_sample generated")
@@ -305,7 +311,7 @@ def load_saved_predictions(file_path:str):
     return Dataset.from_dict(data_dict)
 
 
-def predict_and_evaluate(trained_model:SFTTrainer, tokenizer:AutoTokenizer, ds:Dataset, model_name:str, add_prompt:bool=False, sample:int=1000, seed:int=42, return_predictions:bool=False):
+def predict_and_evaluate(trained_model:SFTTrainer, tokenizer:AutoTokenizer, ds:Dataset, model_name:str, add_prompt:str='', sample:int=1000, seed:int=42, return_predictions:bool=False):
       print("calculating predictions")
       pred_ds = prediction_wrapper(trained_model, tokenizer, ds, model_name, add_prompt, sample, seed)
       print("calculating metrics")
