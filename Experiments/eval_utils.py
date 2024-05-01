@@ -206,7 +206,7 @@ def compute_accuracy(scores:list):
         if score == 1:
             num_correct += 1
 
-    accuracy = 100.0 * ((num_correct) / len(scores))
+    accuracy = ((num_correct) / len(scores))
     return accuracy
 
 
